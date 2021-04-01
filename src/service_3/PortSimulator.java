@@ -20,34 +20,56 @@ public class PortSimulator {
     public class UnloadingTask extends Thread {
         private ArrayList<Ship> ships;
         private Statistic statistic;
-        private int cranes;
         private Date currentDate;
 
 
-        public UnloadingTask(ArrayList<Ship> ships, Statistic statistic, int cranes) {
+        public UnloadingTask(ArrayList<Ship> ships, Statistic statistic) {
             this.ships = ships;
             this.statistic = statistic;
-            this.cranes = cranes;
         }
 
         @Override
         public void run() {
-            getPenalty();
+            try {
+                int cranes = 1;
+                StatisticStruct currentstatisticStruct = getStatisticStruct(cranes);
+                StatisticStruct nextStatisticStruct = getStatisticStruct(++cranes);
+                while (currentstatisticStruct.getFine() > nextStatisticStruct.getFine()) {
+                    currentstatisticStruct = getStatisticStruct(cranes++);
+                    nextStatisticStruct = getStatisticStruct(cranes);
+                }
+                statistic.addStatisticStruct(currentstatisticStruct);
+            } catch (CloneNotSupportedException e) {
+                e.printStackTrace();
+            }
         }
 
-        int getPenalty(){
+        boolean isUnloaded(ArrayList<Ship> shipsCheck) {
+            for (Ship ship: shipsCheck) {
+                if (ship.getEndUploading() == null)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        StatisticStruct getStatisticStruct(int cranes) throws CloneNotSupportedException {
+            StatisticStruct statisticStruct = new StatisticStruct();
+            statisticStruct.cranes = cranes;
             ArrayList<CraneThread> threads = new ArrayList<>();
+            ArrayList<Ship> temp = new ArrayList<Ship>();
+            for (Ship ship: ships) {
+                temp.add((Ship) ship.clone());
+            }
             for (int i = 0; i < cranes; i++) {
-                threads.add(new CraneThread(ships, statistic));
+                threads.add(new CraneThread(temp, statisticStruct));
             }
             currentDate = (Date) startDate.clone();
-            boolean isFree = true;
-            while (currentDate.before(endDate) || !isFree) {
-                isFree = threads.get(0).isFree();
+            while (currentDate.before(endDate) || !isUnloaded(temp)) {
                 for (int j = 0; j < cranes; j++) {
                     threads.get(j).setDate(currentDate);
                     threads.get(j).run();
-                    isFree = isFree && threads.get(j).isFree();
                 }
 
                 try {
@@ -59,25 +81,20 @@ public class PortSimulator {
                 }
                 currentDate.setMinutes(currentDate.getMinutes() + 1);
             }
-            int waitingTime = 0;
-            for (int i = 0; i < statistic.statLooseList.size(); i++) {
-                waitingTime += statistic.statLooseList.get(i).waitingTime;
-            }
-            return (waitingTime / 60) * 100;
+            return statisticStruct;
         }
         }
 
         class CraneThread extends Thread {
             private ArrayList<Ship> ships;
             private Ship currentShip;
-            private Statistic statistic;
-            private Statistic.ShipStatistic shipStatistic;
+            private StatisticStruct statisticStruct;
             private boolean free;
             Date date;
 
-            public CraneThread(ArrayList<Ship> ships, Statistic statistic) {
+            public CraneThread(ArrayList<Ship> ships, StatisticStruct statisticStruct) {
                 this.ships = ships;
-                this.statistic = statistic;
+                this.statisticStruct = statisticStruct;
                 free = true;
             }
 
@@ -93,7 +110,7 @@ public class PortSimulator {
             public void run() {
                 if (free) {
                     for (Ship ship : ships) {
-                        if ((ship.getNumberCranes() < 2) && (ship.getCargo_().getWeight() >=0)
+                        if ((ship.getNumberCranes() < 2) && (ship.getCargo_().getWeight() >0)
                           && (TimeTable.getMinutes(ship.getArriveDate()) + ship.getDelay())
                                 <= TimeTable.getMinutes(date)) {
                             currentShip = ship;
@@ -113,8 +130,7 @@ public class PortSimulator {
                             Date temp = (Date) date.clone();
                             temp.setMinutes(temp.getMinutes() + 1);
                             currentShip.setEndUploading(temp);
-                            shipStatistic = new Statistic.ShipStatistic(currentShip);
-                            statistic.addShipStatistic(shipStatistic);
+                            statisticStruct.addShipStatistic(currentShip);
                         }
                         if (currentShip.getUploadingDelay() <= 0) {
                             free = true;
@@ -135,16 +151,29 @@ public class PortSimulator {
         statistic = new Statistic();
     }
 
-    public void findBest() {
+    public void findBest() throws InterruptedException {
         for (int i = 0; i < ships.length; i++) {
             for (int j = 0; j < ships[i].size(); j++) {
                 ships[i].get(j).setDelay(1);
                 ships[i].get(j).setUploadingDelay(2);
             }
         }
-        ships[0].sort(new Ship.ShipComparator());
-        UnloadingTask task = new UnloadingTask(ships[0], statistic, 2);
-        task.run();
+        for (int i =0; i < ships.length; i++) {
+            ships[i].sort(new Ship.ShipComparator());
+        }
+        ArrayList<UnloadingTask> threads = new ArrayList<>();
+        for (int i =0; i < ships.length; i++) {
+            threads.add(new UnloadingTask(ships[i], statistic));
+            threads.get(i).run();
+        }
+        for (int i =0; i < ships.length; i++) {
+            threads.get(i).join();
+        }
+    }
+
+    public Statistic getStatistic()
+    {
+        return statistic;
     }
 
     static final Random random = new Random();

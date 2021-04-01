@@ -5,11 +5,35 @@ import service_3.Statistic;
 import java.util.Comparator;
 import java.util.Date;
 
-public class Ship {
+public class Ship implements Cloneable{
     public Ship(String name, Cargo cargo, Date date) {
-        name_ = name;
-        cargo_ = cargo;
-        arriveDate = date;
+        this.name_ = name;
+        this.cargo_ = cargo;
+        this.arriveDate = date;
+    }
+    public Ship() {}
+    public Ship(Ship ship) {
+        this.name_ = ship.name_;
+        this.cargo_ = ship.cargo_;
+        this.arriveDate = ship.arriveDate;
+        this.startUploading = ship.startUploading;
+        this.endUploading = ship.endUploading;
+        this.delay = ship.delay;
+        this.uploadingDelay = ship.uploadingDelay;
+        this.numberCranes = ship.numberCranes;
+    }
+
+    public Object clone() throws CloneNotSupportedException {
+        Ship temp = new Ship();
+        temp.name_ = this.name_;
+        temp.cargo_ = (Cargo) this.cargo_.clone();
+        temp.arriveDate = (Date) this.arriveDate.clone();
+        //temp.startUploading = (Date) this.startUploading.clone();
+        //temp.endUploading = (Date) this.endUploading.clone();
+        temp.delay = this.delay;
+        //temp.uploadingDelay = this.uploadingDelay;
+        //temp.numberCranes = this.numberCranes;
+        return temp;
     }
 
     public synchronized Cargo getCargo_() {

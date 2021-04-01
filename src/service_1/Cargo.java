@@ -1,7 +1,10 @@
 package service_1;
 
-public class Cargo {
-    public enum CargoType {
+public class Cargo implements Cloneable{
+    public Object clone() throws CloneNotSupportedException {
+        return super.clone();
+    }
+    public enum CargoType implements Cloneable{
         LOOSE(0),
         LIQUID(1),
         CONTAINERS(2);
@@ -24,15 +27,15 @@ public class Cargo {
         return type_;
     }
 
-    public Double getWeight() {
+    public double getWeight() {
         return weight_;
     }
 
-    public Double getSpeed_() {
+    public double getSpeed_() {
         return type_.speed;
     }
 
-    public void changeWeight(Double number) {
+    public void changeWeight(double number) {
         if (-number > weight_){
             weight_ = 0.0;
         }
@@ -51,5 +54,5 @@ public class Cargo {
     }
 
     private final CargoType type_;
-    private Double weight_;
+    private double weight_;
 }
