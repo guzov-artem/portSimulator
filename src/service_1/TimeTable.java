@@ -1,41 +1,56 @@
 package service_1;
 
-import java.text.SimpleDateFormat;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Random;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.stream.JsonReader;
+
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.util.*;
 
 public class TimeTable {
-    public TimeTable(int size)
+    public TimeTable()
     {
-        size_ = size;
-        shipArrayList_ = new ArrayList[3];
-        for (int i = 0; i < shipArrayList_.length; i++){
-            shipArrayList_[i] = new ArrayList<Ship>();
+        try {
+            readTimeTableParams();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        shipArrayList = new ArrayList[3];
+        for (int i = 0; i < shipArrayList.length; i++){
+            shipArrayList[i] = new ArrayList<Ship>();
         }
     }
+    private void readTimeTableParams() throws FileNotFoundException {
+        JsonReader reader = new JsonReader(new FileReader(System.getProperty("user.dir") + "/timetableParams.json"));
+        Map gsonParser = new Gson().fromJson(reader, Map.class);
+        size_ = ((Double) gsonParser.get("size")).intValue();
+        speed = ((ArrayList<Double>) gsonParser.get("speed"));
+        names = (ArrayList<String>) gsonParser.get("names");
+
+
+    }
     public void generateShips() {
-        for (int i = 0; i < size_.intValue(); i++) {
+        for (int i = 0; i < size_; i++) {
             Ship ship = makeRandomShip();
-            shipArrayList_[ship.getCargo_().getType().getInt()].add(ship);
+            shipArrayList[ship.getCargo().getType().getInt()].add(ship);
         }
     }
 
-    public ArrayList<Ship>[] getShipArrayList_() {
-        return shipArrayList_;
+    public ArrayList<Ship>[] getShipArrayList() {
+        return shipArrayList;
     }
 
     private static Ship makeRandomShip()
     {
-      return new Ship(names[nameNumber++],makeRandomCargo(), new Date(121,
-        3, 0, 0,
-        random.nextInt(20) + 40, random.nextInt(60)));
+      return new Ship(names.get(random.nextInt(names.size() - 1)), makeRandomCargo(), new Date(121,
+        3, random.nextInt(30), random.nextInt(24),
+        random.nextInt(60), random.nextInt(60)));
     }
     private static Cargo makeRandomCargo()
     {
-        Integer temp = new Integer(random.nextInt(3));
-        Cargo.CargoType type = Cargo.CargoType.LOOSE;
+        Integer temp = random.nextInt(3);
+        Cargo.CargoType type = null;
         switch (temp)
         {
             case 0: type = Cargo.CargoType.LOOSE;
@@ -47,21 +62,16 @@ public class TimeTable {
             case 2: type = Cargo.CargoType.CONTAINERS;
             break;
         }
-        return new Cargo(type, random.nextDouble()* 100, speed[temp.intValue()]);
+        return new Cargo(type, random.nextDouble()* 1000, speed.get(temp));
     }
 
     public static long getMinutes(Date date) {
         return (date.getTime()/1000)/60;
     }
     static final Random random = new Random();
-
-    static int nameNumber = 0;
-    static String[] names = {"Черная Жемчужина","Месть Королевы Анны", "Аврора", "Инкремент", "Победа", "Доминатор", "Нагибатор",
-            "Ночной бродяга", "Чмо", "Морской беспредел", "Дендрариум", "Сердцеедка", "Запанка", "Тамбовский мститель", "Путана",
-            "Земфира", "Оксана", "Крутоз", "Щетинистый Гончая", "Божественный Акула", "Мутный Фенрир", "Чёрный Гончая", "Красивый Искупитель", "Бесстрашный Дух", "Золотой Ястреб", "Соломенный Молот", "Военный Свинка", "Чёрный Акула", "Алмазный Астрал", " Ржавый Вампир",
-    "Красный Сатир", " Военный Оборотень", "Красный Забияка", "Дерзкий Ящер", "Божественный Оса", "Бесстрашный Эскалибур", " Галера для двоих", "Щетинистый Ястреб", "Дерзкий Минотавр", "Трусливый Тесей", "Стыдливый Сатир", "Одетый Апполон", "Двуглазый Кутузов", "Высокий Наполеон",
-            "Вкусный Наполеон", "Бессмысленная Жизнь", "Красивая Смерть", "Красная Салфетка", "Разморозить мясо", "Вытереть со Стола", "Смыть за Собой", "Бессмысленный будильник", "Азартный Юнга", "Священная Черемуха", "Пыльца", "Легендарная Пыль", "Ты горишь как Огонь", "Человек за бортом", "Борт за человеком", "Ща бы в мак"};
-    static Double[] speed = {5.0, 2.0, 4.0};
-    private ArrayList<Ship>[] shipArrayList_;
+    //сделать чтение из файла
+    static ArrayList<String> names;
+    static ArrayList<Double> speed;
+    private ArrayList<Ship>[] shipArrayList;
     private Integer size_;
 }

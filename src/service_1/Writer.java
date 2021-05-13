@@ -12,12 +12,12 @@ import java.util.ArrayList;
 
 public class Writer {
     public static void writeToJson() throws IOException {
-        TimeTable timeTable = new TimeTable(50);
+        TimeTable timeTable = new TimeTable();
         timeTable.generateShips();
         JsonWriter  writer = new JsonWriter(new FileWriter(System.getProperty("user.dir") + "/timetable.json"));
         Gson gson = new GsonBuilder().setDateFormat("EEE, dd MMM yyyy HH:mm:ss").create();
         Type TYPE = new TypeToken<ArrayList<Ship>[]>() {}.getType();
-        gson.toJson(timeTable.getShipArrayList_(), TYPE, writer);
+        gson.toJson(timeTable.getShipArrayList(), TYPE, writer);
         writer.close();
     }
 }

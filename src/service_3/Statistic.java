@@ -12,64 +12,68 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 public class Statistic {
 
-    public int unloadTime = 0;
-    public int averageWaitingTime = 0;
-    public int averageDelayTime = 0;
-    public int fine = 0;
-    public int amountLiquide = 0;
-    public int amountLoose = 0;
-    public int amountContainer = 0;
-    public int liquideCranes = 0;
-    public int containerCranes = 0;
-    public int looseCranes = 0;
+    private int unloadTime = 0;
+    private int waitingTime = 0;
+    private int delayTime = 0;
+    private double averageWaitingTime = 0;
+    private double averageDelayTime = 0;
+    private double averageUnloadTime = 0;
+    private int fine = 0;
+    private int amountLiquide = 0;
+    private int amountLoose = 0;
+    private int amountContainer = 0;
+    private int liquideCranes = 0;
+    private int containerCranes = 0;
+    private int looseCranes = 0;
+    private List<ThreadStatistic.ShipStatistic> statLiquidList;
+    private List<ThreadStatistic.ShipStatistic> statLooseList;
+    private List<ThreadStatistic.ShipStatistic> statContainerList;
 
-    public void addStatisticStruct(StatisticStruct statisticStruct) {
-        switch (statisticStruct.shipsStatistics.get(0).type) {
-            case LIQUID: statLiquidList = statisticStruct.shipsStatistics;
-            liquideCranes = statisticStruct.cranes;
-            break;
-            case LOOSE: statLooseList = statisticStruct.shipsStatistics;
-                looseCranes = statisticStruct.cranes;
-            break;
-            case CONTAINERS: statContainerList = statisticStruct.shipsStatistics;
-                containerCranes = statisticStruct.cranes;
-            break;
-        }
-        fine += statisticStruct.fine;
+    {
+        statLiquidList = Collections.synchronizedList(new ArrayList());
+        statLooseList = Collections.synchronizedList(new ArrayList());
+        statContainerList = Collections.synchronizedList(new ArrayList());
     }
 
-    public void generateStatistic(){
-        int waitingTime = 0;
-        int delayTime = 0;
-        for (ShipStatistic shipStatistic: statLiquidList) {
-            waitingTime += shipStatistic.waitingTime;
-            delayTime +=shipStatistic.delay;
-            unloadTime += shipStatistic.unloadTime;
+    synchronized public  void addStatisticStruct(ThreadStatistic threadStatistic) {
+        switch (threadStatistic.getType()) {
+            case LIQUID: {
+                statLiquidList = threadStatistic.getShipsStatistics();
+                amountLiquide = statLiquidList.size();
+                liquideCranes = threadStatistic.getCranes();
+            }
+            break;
+            case LOOSE: {
+                statLooseList = threadStatistic.getShipsStatistics();
+                amountLoose = statLooseList.size();
+                looseCranes = threadStatistic.getCranes();
+            }
+            break;
+            case CONTAINERS: {
+                statContainerList = threadStatistic.getShipsStatistics();
+                amountContainer = statContainerList.size();
+                containerCranes = threadStatistic.getCranes();
+            }
+            break;
         }
-        for (ShipStatistic shipStatistic: statLooseList) {
-            waitingTime += shipStatistic.waitingTime;
-            delayTime +=shipStatistic.delay;
-            unloadTime += shipStatistic.unloadTime;
-        }
-        for (ShipStatistic shipStatistic: statContainerList) {
-            waitingTime += shipStatistic.waitingTime;
-            delayTime +=shipStatistic.delay;
-            unloadTime += shipStatistic.unloadTime;
-        }
-        amountContainer = statContainerList.size();
-        amountLiquide = statLiquidList.size();
-        amountLoose = statLooseList.size();
-        averageDelayTime = delayTime / (amountLoose + amountLiquide + amountContainer);
+        unloadTime += threadStatistic.getUnloadTime();
+        waitingTime += threadStatistic.getWaitingTime();
+        delayTime += threadStatistic.getDelayTime();
+        fine += threadStatistic.getFine();
         averageWaitingTime = waitingTime / (amountLoose + amountLiquide + amountContainer);
+        averageDelayTime = delayTime / (amountLoose + amountLiquide + amountContainer);
+        averageUnloadTime = unloadTime / (amountLoose + amountLiquide + amountContainer);
     }
 
     public void writeToFile(String name) throws IOException {
         JsonWriter writer = new JsonWriter(new FileWriter(System.getProperty("user.dir") + "/" + name));
-        Gson gson = new GsonBuilder().setDateFormat("EEE, dd MMM yyyy HH:mm:ss").create();
+        Gson gson = new GsonBuilder().setDateFormat("EEE, dd MMM yyyy HH:mm:ss").setPrettyPrinting().create();
         Type TYPE = new TypeToken<Statistic>() {
         }.getType();
         gson.toJson(this, TYPE, writer);
@@ -77,63 +81,85 @@ public class Statistic {
     }
 
 
-    public ArrayList<ShipStatistic> statLiquidList;
-    public ArrayList<ShipStatistic> statLooseList;
-    public ArrayList<ShipStatistic> statContainerList;
-    {
-        statLiquidList = new ArrayList<>();
-        statLooseList = new ArrayList<>();
-        statContainerList = new ArrayList<>();
-    }
 }
+class ThreadStatistic {
+    public static class ShipStatistic {
+        private String name;
+        private Date arrivalTime;
+        private long waitingTime = 0;
+        private Date startUnloadTime;
+        private Date endUnloadingTime;
+        private long unloadTime = 0;
+        private Cargo.CargoType type;
+        private int delay;
 
-class ShipStatistic {
-    public String name;
-    public Date arrivalTime;
-    public long waitingTime = 0;
-    public Date startUploadTime;
-    public long unloadTime = 0;
-    public Cargo.CargoType type;
-    public int delay;
+        public ShipStatistic(Ship ship) {
+            this.name = ship.getName();
+            this.arrivalTime = ship.getArriveDate();
+            this.startUnloadTime = ship.getStartUploading();
+            this.waitingTime = TimeTable.getMinutes(startUnloadTime) - TimeTable.getMinutes(arrivalTime);
+            this.unloadTime = TimeTable.getMinutes(ship.getEndUnloading())
+                    - TimeTable.getMinutes(ship.getStartUploading());
+            this.type = ship.getCargo().getType();
+            this.delay = ship.getDelay();
+            this.endUnloadingTime = ship.getEndUnloading();
+        }
+    }
+    public ThreadStatistic(Cargo.CargoType type){
+        shipsStatistics = Collections.synchronizedList(new ArrayList());
+        this.type = type;
+    }
+    private List<ShipStatistic> shipsStatistics;
+    private double fine = 0;
+    private int waitingTime = 0;
+    private int cranes = 0;
+    public int delayTime = 0;
+    private int unloadTime = 0;
+    private static int craneCost = 30000;
+    private Cargo.CargoType type;
 
-    public ShipStatistic() {}
-    public ShipStatistic(Ship ship) {
-        this.name = ship.getName_();
-        this.arrivalTime = ship.getArriveDate();
-        this.startUploadTime = ship.getStartUploading();
-        this.waitingTime = TimeTable.getMinutes(startUploadTime) - TimeTable.getMinutes(arrivalTime);
-        this.unloadTime = TimeTable.getMinutes(ship.getEndUploading())
-                - TimeTable.getMinutes(ship.getStartUploading());
-        this.type = ship.getCargo_().getType();
-        this.delay = ship.getDelay();
-    }
-    public ShipStatistic(ShipStatistic ss) {
-        name = ss.name;
-        arrivalTime = ss.arrivalTime;
-        waitingTime = ss.waitingTime;
-        startUploadTime = ss.startUploadTime;
-        unloadTime = ss.unloadTime;
-    }
-}
-
-class StatisticStruct{
-    public StatisticStruct(){
-        shipsStatistics = new ArrayList<ShipStatistic>();
-    }
-    public ArrayList<ShipStatistic> shipsStatistics;
-    public int fine = 0;
-    public int waitingTime = 0;
-    public int cranes = 0;
-    private static int craneCost = 200;
-    int getFine() {
+    synchronized double getFine() {
         return fine;
     }
-    public void addShipStatistic(ShipStatistic shipStatistic) {
-        shipsStatistics.add(shipStatistic);
-        waitingTime += shipStatistic.waitingTime;
-        fine = waitingTime / 60 * 100 + cranes*craneCost;
+
+    synchronized public void setCranes(int cranes) {
+        this.cranes = cranes;
     }
-    public void addShipStatistic(Ship ship) {
+
+    synchronized public int getCranes() {
+        return cranes;
+    }
+
+    synchronized public Cargo.CargoType getType() {
+        return type;
+    }
+
+    synchronized public List<ShipStatistic> getShipsStatistics() {
+        return shipsStatistics;
+    }
+
+    synchronized public int getDelayTime() {
+        return delayTime;
+    }
+
+    synchronized public int getUnloadTime() {
+        return unloadTime;
+    }
+
+    synchronized public int getWaitingTime() {
+        return waitingTime;
+    }
+
+    synchronized private void addShipStatistic(ShipStatistic shipStatistic) {
+        this.shipsStatistics.add(shipStatistic);
+        if (shipStatistic.waitingTime > 0) {
+            this.waitingTime += shipStatistic.waitingTime;
+        }
+        this.delayTime += shipStatistic.delay;
+        this.unloadTime += shipStatistic.unloadTime;
+        this.fine = (this.waitingTime / 60.0) * 100.0 + (this.cranes - 1) * this.craneCost;
+    }
+    synchronized public void addShipStatistic(Ship ship) {
         this.addShipStatistic(new ShipStatistic(ship));
     }
 }

@@ -3,9 +3,8 @@ package service_3;
 import service_1.Ship;
 import service_1.TimeTable;
 
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.Random;
+import java.util.*;
+import java.util.concurrent.Semaphore;
 
 public class PortSimulator {
     private ArrayList<Ship>[] ships;
@@ -13,134 +12,164 @@ public class PortSimulator {
     private Date startDate;
     private Date endDate;
 
-    public PortSimulator() {
-
-    }
-
     public class UnloadingTask extends Thread {
         private ArrayList<Ship> ships;
-        private Statistic statistic;
         private Date currentDate;
+        private ThreadStatistic threadStatistic;
 
 
-        public UnloadingTask(ArrayList<Ship> ships, Statistic statistic) {
+        public UnloadingTask(ArrayList<Ship> ships) {
             this.ships = ships;
-            this.statistic = statistic;
+            this.threadStatistic = new ThreadStatistic(ships.get(0).getCargo().getType());
+            this.currentDate = new Date();
         }
 
         @Override
         public void run() {
             try {
                 int cranes = 1;
-                StatisticStruct currentstatisticStruct = getStatisticStruct(cranes);
-                StatisticStruct nextStatisticStruct = getStatisticStruct(++cranes);
-                while (currentstatisticStruct.getFine() > nextStatisticStruct.getFine()) {
-                    currentstatisticStruct = getStatisticStruct(cranes++);
-                    nextStatisticStruct = getStatisticStruct(cranes);
+                ThreadStatistic currentstatisticThread = simulate(cranes);
+                ThreadStatistic nextThreadStatistic = simulate(++cranes);
+                while (currentstatisticThread.getFine() > nextThreadStatistic.getFine()) {
+                    currentstatisticThread = simulate(cranes++);
+                    nextThreadStatistic = simulate(cranes);
                 }
-                statistic.addStatisticStruct(currentstatisticStruct);
+                threadStatistic = currentstatisticThread;
             } catch (CloneNotSupportedException e) {
                 e.printStackTrace();
             }
         }
 
-        boolean isUnloaded(ArrayList<Ship> shipsCheck) {
-            for (Ship ship: shipsCheck) {
-                if (ship.getEndUploading() == null)
-                {
+        private boolean isUnloaded(ArrayList<Ship> shipsCheck) {
+            for (Ship ship : shipsCheck) {
+                if (!ship.isUnloaded()) {
                     return false;
                 }
             }
-            return true;
+            return shipsCheck.get(shipsCheck.size() - 1).getUploadingDelay() <= 0;
         }
 
-        StatisticStruct getStatisticStruct(int cranes) throws CloneNotSupportedException {
-            StatisticStruct statisticStruct = new StatisticStruct();
-            statisticStruct.cranes = cranes;
+        ThreadStatistic simulate(int cranes) throws CloneNotSupportedException {
+            ThreadStatistic threadStatistic = new ThreadStatistic(this.threadStatistic.getType());
+            threadStatistic.setCranes(cranes);
             ArrayList<CraneThread> threads = new ArrayList<>();
             ArrayList<Ship> temp = new ArrayList<Ship>();
-            for (Ship ship: ships) {
+            for (Ship ship : ships) {
                 temp.add((Ship) ship.clone());
             }
-            for (int i = 0; i < cranes; i++) {
-                threads.add(new CraneThread(temp, statisticStruct));
-            }
             currentDate = (Date) startDate.clone();
-            while (currentDate.before(endDate) || !isUnloaded(temp)) {
-                for (int j = 0; j < cranes; j++) {
-                    threads.get(j).setDate(currentDate);
-                    threads.get(j).run();
-                }
-
-                try {
-                    for (int j = 0; j < cranes; j++) {
-                        threads.get(j).join();
-                    }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                currentDate.setMinutes(currentDate.getMinutes() + 1);
+            Object mutexEndUnloading = new Object();
+            for (int i = 0; i < cranes; i++) {
+                threads.add(new CraneThread(temp, threadStatistic, currentDate,
+                    new Semaphore(0), new Semaphore(1), mutexEndUnloading));
+                threads.get(i).start();
             }
-            return statisticStruct;
+
+            while(!isUnloaded(temp)) {
+                for (CraneThread task : threads) {
+                    try {
+                        task.getSemaphore1().acquire();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                currentDate.setTime(currentDate.getTime() + 60*1000);
+                for (CraneThread task : threads) {
+                    task.getSemaphore2().release();
+                }
+            }
+            for (CraneThread task : threads) {
+                task.stopWorking();
+                task.getSemaphore2().release();
+            }
+            return threadStatistic;
         }
+
+        public ThreadStatistic getStatisticStruct() {
+            return threadStatistic;
         }
+    }
 
         class CraneThread extends Thread {
-            private ArrayList<Ship> ships;
+            private List<Ship> ships;
             private Ship currentShip;
-            private StatisticStruct statisticStruct;
+            private ThreadStatistic threadStatistic;
             private boolean free;
+            private boolean isWorking;
+            private Semaphore semaphore1;
+            private Semaphore semaphore2;
+            private Object endUnloadingMutex;
             Date date;
 
-            public CraneThread(ArrayList<Ship> ships, StatisticStruct statisticStruct) {
-                this.ships = ships;
-                this.statisticStruct = statisticStruct;
+            public CraneThread(ArrayList<Ship> ships, ThreadStatistic threadStatistic, Date currentDate,
+                Semaphore semaphore1, Semaphore semaphore2, Object endUnloadingMutex) {
+                this.ships = Collections.synchronizedList(ships);
+                this.threadStatistic = threadStatistic;
+                this.date = currentDate;
+                this.semaphore1 = semaphore1;
+                this.semaphore2 = semaphore2;
+                isWorking = true;
                 free = true;
+                this.endUnloadingMutex = endUnloadingMutex;
             }
 
-            public boolean isFree() {
-                return free;
+            public void stopWorking() {
+                isWorking = false;
             }
 
-            public void setDate(Date date) {
-                this.date = date;
+            public Semaphore getSemaphore1() {
+                return semaphore1;
+            }
+
+            public Semaphore getSemaphore2() {
+                return semaphore2;
             }
 
             @Override
             public void run() {
-                if (free) {
-                    for (Ship ship : ships) {
-                        if ((ship.getNumberCranes() < 2) && (ship.getCargo_().getWeight() >0)
-                          && (TimeTable.getMinutes(ship.getArriveDate()) + ship.getDelay())
-                                <= TimeTable.getMinutes(date)) {
-                            currentShip = ship;
-                            currentShip.changeNumberCranes(1);
-                            if (currentShip.getNumberCranes() == 1) {
-                              currentShip.setStartUploading((Date) date.clone());
-                            }
-                            free = false;
-                            break;
-                        }
-                    }
-                }
-                if (currentShip != null) {
-                    currentShip.decreaseCargo(currentShip.getCargo_().getSpeed_());
-                    if (currentShip.getCargo_().getWeight() <= 0) {
-                        if (currentShip.getEndUploading() == null) {
-                            Date temp = (Date) date.clone();
-                            temp.setMinutes(temp.getMinutes() + 1);
-                            currentShip.setEndUploading(temp);
-                            statisticStruct.addShipStatistic(currentShip);
-                        }
-                        if (currentShip.getUploadingDelay() <= 0) {
-                            free = true;
-                        }
-                        else {
-                            currentShip.setUploadingDelay(currentShip.getUploadingDelay() - 1);
-                        }
-                    }
-                }
+                while (isWorking) {
+                    try {
+                        semaphore2.acquire();
 
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    if (free) {
+
+                        for (Ship ship : ships) {
+                            if ((ship.getNumberCranes() < 2) && (ship.getCargo().getWeight() > 0)
+                                    && (TimeTable.getMinutes(ship.getArriveDate()) + ship.getDelay())
+                                    <= TimeTable.getMinutes(date)) {
+                                currentShip = ship;
+                                currentShip.changeNumberCranes(1);
+                                if (!currentShip.isStartedUnloading()) {
+                                    currentShip.setStartUploading((Date) date.clone());
+                                }
+                                free = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (currentShip != null) {
+                        currentShip.decreaseCargo(currentShip.getCargo().getSpeed_());
+                        if (currentShip.getCargo().getWeight() <= 0) {
+                            synchronized (endUnloadingMutex) {
+                                if (!currentShip.isUnloaded()) {
+                                    Date temp = (Date) date.clone();
+                                    temp.setMinutes(temp.getMinutes() + currentShip.getUploadingDelay());
+                                    currentShip.setEndUnloading(temp);
+                                    threadStatistic.addShipStatistic(currentShip);
+                                }
+                            }
+                            if (currentShip.getUploadingDelay() <= 0) {
+                                free = true;
+                            } else {
+                                currentShip.setUploadingDelay(currentShip.getUploadingDelay() - 1);
+                            }
+                        }
+                    }
+                    semaphore1.release();
+                }
             }
         }
 
@@ -148,26 +177,35 @@ public class PortSimulator {
         this.ships = ships;
         this.startDate = startDate;
         this.endDate = endDate;
-        statistic = new Statistic();
+        this.statistic = new Statistic();
     }
-
-    public void findBest() throws InterruptedException {
+    private void generateDelays() {
+        Random random = new Random();
         for (int i = 0; i < ships.length; i++) {
             for (int j = 0; j < ships[i].size(); j++) {
-                ships[i].get(j).setDelay(1);
-                ships[i].get(j).setUploadingDelay(2);
+                ships[i].get(j).setDelay(random.nextInt(60*24*7) - 2*60*24*7);
+                ships[i].get(j).setUploadingDelay(random.nextInt(1400));
             }
         }
+    }
+    private void sortShips() {
+
         for (int i =0; i < ships.length; i++) {
             ships[i].sort(new Ship.ShipComparator());
         }
-        ArrayList<UnloadingTask> threads = new ArrayList<>();
+    }
+
+    public void findBestStatistic() throws InterruptedException {
+        generateDelays();
+        sortShips();
+        List<UnloadingTask> threads = new ArrayList<>();
         for (int i =0; i < ships.length; i++) {
-            threads.add(new UnloadingTask(ships[i], statistic));
-            threads.get(i).run();
+            threads.add(new UnloadingTask(ships[i]));
+            threads.get(i).start();
         }
         for (int i =0; i < ships.length; i++) {
             threads.get(i).join();
+            statistic.addStatisticStruct(threads.get(i).getStatisticStruct());
         }
     }
 
@@ -176,5 +214,4 @@ public class PortSimulator {
         return statistic;
     }
 
-    static final Random random = new Random();
 }
